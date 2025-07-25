@@ -20,9 +20,25 @@ def step(points, labels, model):
     """
     
     # TODO : Implement step function for classification.
+    points = points.permute(0, 2, 1)
 
-    loss = None
-    preds = None
+    device = next(model.parameters()).device
+    print("[Train CLS] Before Device: ", device)
+
+    points = points.to(device)
+    labels = labels.to(device)
+
+    # Forward pass
+    outputs = model(points)
+
+    # Loss
+    loss_fn = torch.nn.CrossEntropyLoss()
+    loss = loss_fn(outputs, labels)
+
+    # Prediction
+    preds = outputs.argmax(dim=1)
+    ###
+
     return loss, preds
 
 
@@ -31,6 +47,10 @@ def train_step(points, labels, model, optimizer, train_acc_metric):
     train_batch_acc = train_acc_metric(preds, labels.to(device))
 
     # TODO : Implement backpropagation using optimizer and loss
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    ###
 
     return loss, train_batch_acc
 
