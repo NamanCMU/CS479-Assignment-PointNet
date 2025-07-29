@@ -23,10 +23,25 @@ def step(points, model):
     # TODO : Implement step function for AutoEncoder. 
     # Hint : Use chamferDist defined in above
     # Hint : You can compute chamfer distance between two point cloud pc1 and pc2 by chamfer_distance(pc1, pc2)
-    
-    preds = None
-    loss = None
+    points_prev = points
+    points = points.permute(0, 2, 1)
 
+    device = next(model.parameters()).device
+    print("[AE] Before device: ", device)
+
+    points = points.to(device)
+    points_prev = points_prev.to(device)
+
+    # Forward pass
+    preds = model(points)
+    print("[AE] points shape: ", points_prev.shape)
+    print("[AE] preds shape: ", preds.shape)
+
+    # Loss
+    # Using points_prev for consistent dimensions
+    loss, _ = chamfer_distance(points_prev, preds)
+    ###
+    
     return loss, preds
 
 
@@ -34,6 +49,10 @@ def train_step(points, model, optimizer):
     loss, preds = step(points, model)
 
     # TODO : Implement backpropagation using optimizer and loss
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    ###
 
     return loss, preds
 

@@ -88,15 +88,18 @@ class PointNetFeat(nn.Module):
 
         # TODO : Implement forward function.
         print("[PN Feature] PC shape: ", pointcloud.shape)
-        x = self.stn3(pointcloud)
-        x = torch.bmm(x, pointcloud)
-        print("[PN Feature] STN3 output shape: ", x.shape)
+        x = pointcloud
+        if self.input_transform:
+            x = self.stn3(pointcloud)
+            x = torch.bmm(x, pointcloud)
+            print("[PN Feature] STN3 output shape: ", x.shape)
         x = F.relu(self.conv1a(x)) 
         x = F.relu(self.conv1b(x))
         print("[PN Feature] MLP First output shape: ", x.shape)
-        y = self.stn64(x)
-        x = torch.bmm(y, x)
-        print("[PN Feature] STN64 output shape: ", x.shape)
+        if self.feature_transform:
+            y = self.stn64(x)
+            x = torch.bmm(y, x)
+            print("[PN Feature] STN64 output shape: ", x.shape)
         x = F.relu(self.conv2a(x)) 
         x = F.relu(self.conv2b(x))
         print("[PN Feature] MLP Second output shape: ", x.shape)
@@ -151,7 +154,23 @@ class PointNetPartSeg(nn.Module):
 
         # returns the logits for m part labels each point (m = # of parts = 50).
         # TODO: Implement part segmentation model based on PointNet Architecture.
-        pass
+        self.stn3 = STNKd(k=3)
+        self.stn64 = STNKd(k=64)
+
+        self.input_transform = True 
+        self.feature_transform = True 
+
+        self.conv1a = nn.Sequential(nn.Conv1d(3, 64, 1), nn.BatchNorm1d(64))
+        self.conv1b = nn.Sequential(nn.Conv1d(64, 64, 1), nn.BatchNorm1d(64))
+
+        self.conv2a = nn.Sequential(nn.Conv1d(64, 128, 1), nn.BatchNorm1d(128))
+        self.conv2b = nn.Sequential(nn.Conv1d(128, 1024, 1), nn.BatchNorm1d(1024))
+
+        self.conv3a = nn.Sequential(nn.Conv1d(1088, 512, 1), nn.BatchNorm1d(512))
+        self.conv3b = nn.Sequential(nn.Conv1d(512, 256, 1), nn.BatchNorm1d(256))
+        self.conv3c = nn.Sequential(nn.Conv1d(256, 128, 1), nn.BatchNorm1d(128))
+
+        self.conv4a = nn.Sequential(nn.Conv1d(128, m, 1), nn.BatchNorm1d(m))
 
     def forward(self, pointcloud):
         """
@@ -162,7 +181,40 @@ class PointNetPartSeg(nn.Module):
             - ...
         """
         # TODO: Implement forward function.
-        pass
+        x = pointcloud
+        print("[PN Feature] PC shape: ", pointcloud.shape)
+        if self.input_transform:
+            x = self.stn3(pointcloud)
+            x = torch.bmm(x, pointcloud)
+            print("[PN Feature] STN3 output shape: ", x.shape)
+        x = F.relu(self.conv1a(x)) 
+        x = F.relu(self.conv1b(x))
+        print("[PN Feature] MLP First output shape: ", x.shape)
+        if self.feature_transform:
+            y = self.stn64(x)
+            x = torch.bmm(y, x)
+            print("[PN Feature] STN64 output shape: ", x.shape)
+        xdash = x
+        x = F.relu(self.conv2a(x)) 
+        x = F.relu(self.conv2b(x))
+        print("[PN Feature] MLP Second output shape: ", x.shape)
+        x = torch.max(x, dim=2, keepdim=False)[0]
+        print("[PN Feature] Max pooling x shape: ", x.shape)
+
+        # Seg network now
+        x_expanded = x.unsqueeze(2).repeat(1, 1, 2048)
+        print("[PN Part seg] X expanded shape: ", x_expanded.shape)
+        x = torch.cat([xdash, x_expanded], dim=1)
+        print("[PN Part seg] concatenated output: ", x.shape)
+        x = F.relu(self.conv3a(x))
+        x = F.relu(self.conv3b(x))
+        x = F.relu(self.conv3c(x))
+        print("[PN Part seg] MLP Third output shape: ", x.shape)
+        x = F.relu(self.conv4a(x))
+        print("[PN Part seg] Final output score shape: ", x.shape)
+
+        return x
+        ###
 
 
 class PointNetAutoEncoder(nn.Module):
@@ -172,6 +224,25 @@ class PointNetAutoEncoder(nn.Module):
 
         # Decoder is just a simple MLP that outputs N x 3 (x,y,z) coordinates.
         # TODO : Implement decoder.
+        self.num_points = num_points
+        self.fc1 = nn.Sequential(
+            nn.Linear(1024, num_points // 4),
+            nn.BatchNorm1d(num_points // 4),
+            nn.ReLU()
+        )
+        self.fc2 = nn.Sequential(
+            nn.Linear(num_points // 4, num_points // 2),
+            nn.BatchNorm1d(num_points // 2),
+            nn.ReLU()
+        )
+        self.fc3 = nn.Sequential(
+            nn.Linear(num_points // 2, num_points),
+            nn.Dropout(p=0.3),
+            nn.BatchNorm1d(num_points),
+            nn.ReLU()
+        )
+        self.fc4 = nn.Linear(num_points, num_points * 3)
+        ###
 
     def forward(self, pointcloud):
         """
@@ -182,7 +253,22 @@ class PointNetAutoEncoder(nn.Module):
             - ...
         """
         # TODO : Implement forward function.
-        pass
+        print("[AE] Zero: ", pointcloud.shape)
+        x = self.pointnet_feat(pointcloud)
+        print("[AE] First: ", x.shape)
+        x = self.fc1(x)
+        print("[AE] Second: ", x.shape)
+        x = self.fc2(x)
+        print("[AE] Third: ", x.shape)
+        x = self.fc3(x)
+        print("[AE] Fourth: ", x.shape)
+        x = self.fc4(x)
+        print("[AE] Fifth: ", x.shape)
+        x = x.view(-1, self.num_points, 3)
+        print("[AE] Sixth: ", x.shape)
+
+        return x
+        ###
 
 
 def get_orthogonal_loss(feat_trans, reg_weight=1e-3):
